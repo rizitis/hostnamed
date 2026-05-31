@@ -1,37 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC
-  "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
-  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
-
-<!--
-  org.freedesktop.hostname1.policy
-  polkit actions for hostnamed.
-
-  Three distinct action IDs matching the constants in rcl-hostname.h:
-
-    set-hostname       – transient hostname via sethostname(2)
-    set-static-hostname – persistent hostname in /etc/hostname
-    set-machine-info   – fields in /etc/machine-info (pretty name, icon, …)
-
-  All three default to:
-    • allow_any      : auth_admin       (remote / unknown session: must auth as admin)
-    • allow_inactive : auth_admin       (inactive session: must auth as admin)
-    • allow_active   : auth_admin_keep  (active local session: auth once, keep result)
-
-  Adjust allow_active to "yes" to let any active local user change names
-  without a password, or to "auth_admin" to always require admin credentials
-  for active sessions too.
--->
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 
 <policyconfig>
 
-  <vendor>hostnamed</vendor>
-  <vendor_url>https://www.freedesktop.org/wiki/Software/systemd/hostnamed/</vendor_url>
-
-  <!-- ── Transient hostname ───────────────────────────────────────────────── -->
   <action id="org.freedesktop.hostname1.set-hostname">
-    <description gettext-domain="hostnamed">Set the transient host name</description>
-    <message gettext-domain="hostnamed">Authentication is required to set the transient host name.</message>
+    <description>Set the transient host name</description>
+    <message>Authentication is required to set the transient host name.</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
@@ -42,10 +18,9 @@
     </annotate>
   </action>
 
-  <!-- ── Static hostname (/etc/hostname) ──────────────────────────────────── -->
   <action id="org.freedesktop.hostname1.set-static-hostname">
-    <description gettext-domain="hostnamed">Set the static (persistent) host name</description>
-    <message gettext-domain="hostnamed">Authentication is required to set the static host name.</message>
+    <description>Set the static host name</description>
+    <message>Authentication is required to set the static host name.</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
@@ -53,10 +28,9 @@
     </defaults>
   </action>
 
-  <!-- ── Machine-info fields (/etc/machine-info) ──────────────────────────── -->
   <action id="org.freedesktop.hostname1.set-machine-info">
-    <description gettext-domain="hostnamed">Set the machine information (pretty name, icon, chassis, …)</description>
-    <message gettext-domain="hostnamed">Authentication is required to set the machine information.</message>
+    <description>Set machine information (pretty name, icon, chassis)</description>
+    <message>Authentication is required to set machine information.</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
