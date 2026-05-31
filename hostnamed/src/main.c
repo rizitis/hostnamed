@@ -171,7 +171,7 @@ rcl_main_log_handler_cb( const gchar    *log_domain,
 /***********************
   rcl_main_inotify_cb:
 
-  Called when inotify detects a change to /etc/hostname or /etc/machine-info.
+  Called when inotify detects a change to /etc/HOSTNAME or /etc/machine-info.
   Re-reads the files and refreshes D-Bus properties. Unlike timedated's polling
   timer, hostname data only changes when those files are written, so inotify is
   the right mechanism here.
@@ -203,7 +203,7 @@ gint main( gint argc, gchar **argv )
   gboolean            replace  = FALSE;
 
   /*
-   * inotify monitors for /etc/hostname and /etc/machine-info.
+   * inotify monitors for /etc/HOSTNAME and /etc/machine-info.
    * We create one GFileMonitor per file and connect both to the
    * same callback so any write triggers a property refresh.
    */
@@ -291,17 +291,17 @@ gint main( gint argc, gchar **argv )
                           NULL );
 
   /*
-   * Watch /etc/hostname and /etc/machine-info with inotify via GFileMonitor.
+   * Watch /etc/HOSTNAME and /etc/machine-info with inotify via GFileMonitor.
    *
    * Unlike timedated where a 1-second poll is appropriate (the clock always
    * ticks), hostname data is static between explicit changes. Watching the
    * files directly means we react immediately to external edits (e.g. from
-   * another tool writing /etc/hostname) while burning zero CPU at idle.
+   * another tool writing /etc/HOSTNAME) while burning zero CPU at idle.
    *
    * G_FILE_MONITOR_WATCH_MOVES also catches atomic rename-based writes that
    * editors and systemd-hostnamed itself use (write to temp file, rename).
    */
-  hostname_file = g_file_new_for_path( "/etc/hostname" );
+  hostname_file = g_file_new_for_path( "/etc/HOSTNAME" );
   hostname_mon  = g_file_monitor_file( hostname_file,
                                        G_FILE_MONITOR_WATCH_MOVES,
                                        NULL, &error );
@@ -309,11 +309,11 @@ gint main( gint argc, gchar **argv )
   {
     g_signal_connect_swapped( hostname_mon, "changed",
                               G_CALLBACK( rcl_main_inotify_cb ), state );
-    g_debug( "Watching /etc/hostname for changes" );
+    g_debug( "Watching /etc/HOSTNAME for changes" );
   }
   else
   {
-    g_warning( "Could not watch /etc/hostname: %s", error->message );
+    g_warning( "Could not watch /etc/HOSTNAME: %s", error->message );
     g_clear_error( &error );
   }
 
