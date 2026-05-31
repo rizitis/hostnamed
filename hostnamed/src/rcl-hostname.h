@@ -62,7 +62,7 @@ void       rcl_daemon_set_debug  ( RclDaemon *daemon, gboolean debug );
   Set* methods with polkit authorisation):
 
     Hostname          – transient hostname (sethostname(2))
-    StaticHostname    – value stored in /etc/hostname
+    StaticHostname    – value stored in /etc/HOSTNAME
     PrettyHostname    – human-readable name from /etc/machine-info
     DefaultHostname   – compiled-in or distro default (read-only)
     HostnameSource    – one of: "static", "transient", "default"  (string)
@@ -83,7 +83,7 @@ void       rcl_daemon_set_debug  ( RclDaemon *daemon, gboolean debug );
 
   Methods:
     SetHostname       (s name, b interactive)  – sets transient hostname
-    SetStaticHostname (s name, b interactive)  – writes /etc/hostname
+    SetStaticHostname (s name, b interactive)  – writes /etc/HOSTNAME
     SetPrettyHostname (s name, b interactive)  – writes PRETTY_HOSTNAME to /etc/machine-info
     SetIconName       (s name, b interactive)  – writes ICON_NAME to /etc/machine-info
     SetChassis        (s name, b interactive)  – writes CHASSIS to /etc/machine-info
@@ -151,7 +151,7 @@ void rcl_daemon_sync_dbus_properties ( RclHostnameDaemon *daemon );
   or alternative distro layouts.
  ---------------------------------------------------------------------------*/
 
-#define RCL_HOSTNAME_FILE          "/etc/hostname"
+#define RCL_HOSTNAME_FILE          "/etc/HOSTNAME"
 #define RCL_MACHINE_INFO_FILE      "/etc/machine-info"
 #define RCL_OS_RELEASE_FILE        "/etc/os-release"
 
