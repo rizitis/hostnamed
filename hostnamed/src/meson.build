@@ -30,7 +30,7 @@ executable(
   dependencies        : hostnamed_deps,
   include_directories : hostnamed_inc,
   install             : true,
-  install_dir         : get_option('sbindir'),
+  install_dir         : get_option('libexecdir'),
   # Export as few symbols as possible – this is a daemon, not a library.
   gnu_symbol_visibility : 'hidden',
   c_args              : [
