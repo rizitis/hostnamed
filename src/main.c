@@ -334,7 +334,7 @@ gint main( gint argc, gchar **argv )
   }
 
   /* acquire name */
-  bus_flags = G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT;
+  bus_flags = G_BUS_NAME_OWNER_FLAGS_NONE;
   if( replace )
     bus_flags |= G_BUS_NAME_OWNER_FLAGS_REPLACE;
 
