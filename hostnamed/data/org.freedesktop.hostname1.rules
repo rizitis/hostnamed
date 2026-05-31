@@ -1,0 +1,14 @@
+polkit.addRule(function(action, subject) {
+
+    if (
+        action.id == "org.freedesktop.hostname1.set-hostname" ||
+        action.id == "org.freedesktop.hostname1.set-static-hostname" ||
+        action.id == "org.freedesktop.hostname1.set-machine-info"
+    ) {
+        if (subject.isInGroup("@PRIVILEGED_GROUP@")) {
+            return polkit.Result.YES;
+        }
+
+        return polkit.Result.AUTH_ADMIN;
+    }
+});
