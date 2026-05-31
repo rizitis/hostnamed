@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# meson_options.txt – hostnamed build options
+# ─────────────────────────────────────────────────────────────────────────────
+
+# polkit is required in production but can be disabled for unit-test builds
+# where there is no system bus.
+option(
+  'polkit',
+  type        : 'feature',
+  value       : 'auto',
+  description : 'Use polkit for authorising Set* D-Bus method calls',
+)
+
+# D-Bus system service files (.service) install location.  Defaults to the
+# standard path; override if your distro puts them elsewhere.
+option(
+  'dbus_system_service_dir',
+  type        : 'string',
+  value       : '',
+  description : 'Directory for D-Bus system service files '
+              + '(default: <datadir>/dbus-1/system-services)',
+)
+
+# D-Bus system policy (bus configuration) files.
+option(
+  'dbus_system_conf_dir',
+  type        : 'string',
+  value       : '',
+  description : 'Directory for D-Bus system bus configuration files '
+              + '(default: <sysconfdir>/dbus-1/system.d)',
+)
+
+# polkit policy files.
+option(
+  'polkit_policy_dir',
+  type        : 'string',
+  value       : '',
+  description : 'Directory for polkit .policy files '
+              + '(default: <datadir>/polkit-1/actions)',
+)
+
+# Default hostname written to config.h so the daemon can report it on systems
+# where /etc/hostname does not exist yet.
+option(
+  'default_hostname',
+  type        : 'string',
+  value       : 'localhost',
+  description : 'Fallback hostname reported when /etc/hostname is absent',
+)
