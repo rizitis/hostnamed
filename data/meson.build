@@ -26,22 +26,12 @@ else
 endif
 
 # --- D-Bus system policy directory -------------------------------------------
-_dbus_conf_opt = get_option('dbus_system_conf_dir')
-if _dbus_conf_opt != ''
-  dbus_conf_dir = _dbus_conf_opt
+dbus_conf_dir_opt = get_option('dbus_system_conf_dir')
+
+if dbus_conf_dir_opt != ''
+  dbus_conf_dir = dbus_conf_dir_opt
 else
-  dbus_dep = dependency('dbus-1', required : false)
-  if dbus_dep.found()
-    # dbus-1.pc exposes sysconfdir; the policy files live under
-    # <sysconfdir>/dbus-1/system.d on every distro we care about.
-    _dbus_sysconfdir = dbus_dep.get_variable(
-      pkgconfig        : 'sysconfdir',
-      pkgconfig_define : ['sysconfdir', sysconfdir],
-    )
-    dbus_conf_dir = join_paths(_dbus_sysconfdir, 'dbus-1', 'system.d')
-  else
-    dbus_conf_dir = join_paths(sysconfdir, 'dbus-1', 'system.d')
-  endif
+  dbus_conf_dir = join_paths(prefix, datadir, 'dbus-1', 'system.d')
 endif
 
 # --- polkit policy directory -------------------------------------------------
