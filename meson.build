@@ -81,6 +81,14 @@ conf.set_quoted('SYSCONFDIR',      sysconfdir)
 conf.set_quoted('DATADIR',         join_paths(prefix, datadir))
 conf.set_quoted('SBINDIR',         join_paths(prefix, sbindir))
 
+# Distro-specific tunables from meson_options.txt.
+# PRIVILEGED_GROUP is used by polkit rule evaluation to decide which local
+# users are considered administrators without a password prompt.
+conf.set_quoted('PRIVILEGED_GROUP', get_option('privileged-group'))
+# HOSTNAME_FILE is the path the daemon reads/writes for the static hostname.
+# /etc/HOSTNAME on Slackware, /etc/hostname on most other distros.
+conf.set_quoted('HOSTNAME_FILE',    get_option('HOSTNAME'))
+
 # GLIB_VERSION_* guards – target the minimum we require so we get deprecation
 # warnings for anything we use that was removed after glib_req.
 conf.set('GLIB_VERSION_MIN_REQUIRED', 'GLIB_VERSION_2_56')
