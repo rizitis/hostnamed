@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 #
-# hostnamectl - Slackware-compatible hostnamed client
-# Clean implementation with safe parsing and stable output
+# hostnamectl - control the system hostname
+# Slackware implementation - writes files directly.
+# hostnamed picks up changes via inotify and updates D-Bus properties.
 #
+# Copyright 2025, GPLv2+
 
-DBUS_DEST="org.freedesktop.hostname1"
-DBUS_PATH="/org/freedesktop/hostname1"
-DBUS_IFACE="org.freedesktop.hostname1"
+if [ -f /etc/HOSTNAME ]; then
+  HOSTNAME_FILE="/etc/HOSTNAME"
+else
+  HOSTNAME_FILE="/etc/hostname"
+fi
 
-HOSTNAME_FILE="/etc/HOSTNAME"
-[ -f /etc/hostname ] && HOSTNAME_FILE="/etc/hostname"
+MACHINE_INFO_FILE="/etc/machine-info"
 
-MACHINE_INFO="/etc/machine-info"
-
-VALID_CHASSIS="desktop laptop server tablet handset watch embedded vm container"
+VALID_CHASSIS=(desktop laptop server tablet handset watch embedded vm container convertible)
 
 # ---------------------------------------------------------------------------
-# helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 die() {
@@ -25,196 +26,345 @@ die() {
 }
 
 require_root() {
-  [ "$EUID" -ne 0 ] && die "must be root"
+  [ "$EUID" -ne 0 ] && die "must be root to change hostname settings"
+  return 0
 }
 
-trim() {
-  tr -d '[:space:]'
+get_os_release() {
+  local key="$1"
+  [ -f /etc/os-release ] && grep "^${key}=" /etc/os-release | cut -d= -f2- | tr -d '"'
 }
 
-# ---------------------------------------------------------------------------
-# machine-info
-# ---------------------------------------------------------------------------
-
-mi_get() {
-  [ -f "$MACHINE_INFO" ] || return
-  grep "^$1=" "$MACHINE_INFO" 2>/dev/null | cut -d= -f2- | tr -d '"'
+dmi_read() {
+  cat "/sys/class/dmi/id/$1" 2>/dev/null || true
 }
 
-mi_set() {
-  require_root
-  touch "$MACHINE_INFO" 2>/dev/null || die "cannot write /etc/machine-info"
+machine_info_get() {
+  grep "^${1}=" "$MACHINE_INFO_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true
+}
 
-  if grep -q "^$1=" "$MACHINE_INFO" 2>/dev/null; then
-    sed -i "s|^$1=.*|$1=\"$2\"|" "$MACHINE_INFO"
-  else
-    echo "$1=\"$2\"" >> "$MACHINE_INFO"
+# Atomically write or remove a KEY="value" entry in /etc/machine-info.
+# Passing an empty value removes the key entirely.
+machine_info_set() {
+  local key="$1"
+  local value="$2"
+  local tmp
+
+  touch "$MACHINE_INFO_FILE" 2>/dev/null || die "cannot write $MACHINE_INFO_FILE"
+
+  tmp=$(mktemp "${MACHINE_INFO_FILE}.XXXXXX") || die "cannot create temp file"
+
+  grep -v "^${key}=" "$MACHINE_INFO_FILE" > "$tmp" 2>/dev/null || true
+
+  if [ -n "$value" ]; then
+    echo "${key}=\"${value}\"" >> "$tmp"
   fi
+
+  mv "$tmp" "$MACHINE_INFO_FILE" || { rm -f "$tmp"; die "cannot update $MACHINE_INFO_FILE"; }
 }
 
-# ---------------------------------------------------------------------------
-# DMI helpers
-# ---------------------------------------------------------------------------
+# Write out a fully populated /etc/machine-info from detected values.
+# Called automatically if the file does not exist yet.
+# An existing file is never overwritten by this function.
+init_machine_info() {
+  [ -f "$MACHINE_INFO_FILE" ] && return
 
-dmi() {
-  cat "/sys/class/dmi/id/$1" 2>/dev/null
+  local chassis icon pretty
+  local ct
+  ct=$(dmi_read chassis_type)
+  case "$ct" in
+    3|4|6|7)    chassis="desktop";     icon="computer-desktop" ;;
+    8|9|10|14)  chassis="laptop";      icon="computer-laptop"  ;;
+    11)         chassis="handset";     icon="phone"            ;;
+    17|23)      chassis="server";      icon="computer-server"  ;;
+    30|32)      chassis="tablet";      icon="computer-tablet"  ;;
+    31)         chassis="convertible"; icon="computer-laptop"  ;;
+    *)          chassis="";            icon="computer"         ;;
+  esac
+
+  # Use the static hostname as the initial pretty hostname
+  pretty=$(cat "$HOSTNAME_FILE" 2>/dev/null | tr -d '[:space:]' | cut -d. -f1)
+
+  local tmp
+  tmp=$(mktemp "${MACHINE_INFO_FILE}.XXXXXX") || return
+
+  cat > "$tmp" << EOF
+# /etc/machine-info - see machine-info(5)
+PRETTY_HOSTNAME="${pretty}"
+ICON_NAME="${icon}"
+CHASSIS="${chassis}"
+DEPLOYMENT=""
+LOCATION=""
+EOF
+
+  mv "$tmp" "$MACHINE_INFO_FILE" || rm -f "$tmp"
+  echo "Created $MACHINE_INFO_FILE"
 }
-
-# ---------------------------------------------------------------------------
-# chassis detection (FIXED)
-# ---------------------------------------------------------------------------
 
 detect_chassis() {
-  local c vendor
+  local chassis
+  chassis=$(machine_info_get CHASSIS)
+  [ -n "$chassis" ] && { echo "$chassis"; return; }
 
-  c=$(mi_get CHASSIS)
-  [ -n "$c" ] && { echo "$c"; return; }
-
-  c=$(dmi chassis_type)
-
-  case "$c" in
-    3|4|5|6|7)  echo "desktop"; return ;;
-    8|9|10|14)  echo "laptop"; return ;;
-    11)         echo "handset"; return ;;
-    13|31|32)   echo "server"; return ;;
+  local ct
+  ct=$(dmi_read chassis_type)
+  case "$ct" in
+    3|4|6|7)    echo "desktop"     ;;
+    8|9|10|14)  echo "laptop"      ;;
+    11)         echo "handset"     ;;
+    17|23)      echo "server"      ;;
+    30|32)      echo "tablet"      ;;
+    31)         echo "convertible" ;;
+    *)          echo "unknown"     ;;
   esac
-
-  vendor=$(dmi sys_vendor | tr 'A-Z' 'a-z')
-
-  case "$vendor" in
-    *hp*|*dell*|*lenovo*|*asus*|*acer*)
-      echo "desktop"
-      return
-    ;;
-  esac
-
-  echo "unknown"
 }
 
-# ---------------------------------------------------------------------------
-# virtualization
-# ---------------------------------------------------------------------------
-
 detect_virtualization() {
-  grep -q container /proc/1/cgroup 2>/dev/null && { echo "container"; return; }
-  grep -qi hypervisor /proc/cpuinfo 2>/dev/null && { echo "vm"; return; }
+  if [ -f /.dockerenv ] || grep -q "docker\|container" /proc/1/cgroup 2>/dev/null; then
+    echo "docker"; return
+  fi
+  if grep -qi "hypervisor" /proc/cpuinfo 2>/dev/null; then
+    local vendor
+    vendor=$(dmi_read sys_vendor)
+    case "$vendor" in
+      *VMware*)     echo "vmware"    ;;
+      *VirtualBox*) echo "oracle"    ;;
+      *QEMU*)       echo "kvm"       ;;
+      *Microsoft*)  echo "microsoft" ;;
+      *Xen*)        echo "xen"       ;;
+      *)            echo "vm-other"  ;;
+    esac
+    return
+  fi
   echo "none"
 }
 
 # ---------------------------------------------------------------------------
-# OS info
-# ---------------------------------------------------------------------------
-
-os_pretty() {
-  [ -f /etc/os-release ] && . /etc/os-release && echo "$PRETTY_NAME" && return
-  echo "Unknown OS"
-}
-
-os_cpe() {
-  [ -f /etc/os-release ] && grep ^CPE_NAME= /etc/os-release | cut -d= -f2- | tr -d '"'
-}
-
-# ---------------------------------------------------------------------------
-# DBus fallback (optional)
-# ---------------------------------------------------------------------------
-
-dbus_call() {
-  command -v dbus-send >/dev/null 2>&1 || return 1
-
-  dbus-send --system --print-reply \
-    --dest="$DBUS_DEST" "$DBUS_PATH" \
-    "$DBUS_IFACE.$1" \
-    "string:$2" "boolean:false" >/dev/null 2>&1
-}
-
-# ---------------------------------------------------------------------------
-# status output
+# status
 # ---------------------------------------------------------------------------
 
 cmd_status() {
-  local static transient icon chassis machine_id boot_id
-  local vendor model fw_ver fw_date kernel arch os cpe
+  local static_hostname transient_hostname pretty_hostname
+  local icon_name chassis deployment location
+  local machine_id boot_id virtualization
+  local os_name os_cpe kernel arch
+  local hw_vendor hw_model fw_version fw_date
 
-  static=$(tr -d '[:space:]' < "$HOSTNAME_FILE" 2>/dev/null)
-  [ -z "$static" ] && static="n/a"
+  static_hostname=$(cat "$HOSTNAME_FILE" 2>/dev/null | tr -d '[:space:]')
+  [ -z "$static_hostname" ] && static_hostname="n/a"
 
-  transient=$(hostname 2>/dev/null)
-  [ -z "$transient" ] && transient="n/a"
+  transient_hostname=$(hostname 2>/dev/null || true)
+  [ -z "$transient_hostname" ] && transient_hostname="n/a"
 
-  icon=$(mi_get ICON_NAME)
-  [ -z "$icon" ] && icon="computer"
-
+  pretty_hostname=$(machine_info_get PRETTY_HOSTNAME)
+  icon_name=$(machine_info_get ICON_NAME)
+  [ -z "$icon_name" ] && icon_name="computer"
   chassis=$(detect_chassis)
+  deployment=$(machine_info_get DEPLOYMENT)
+  location=$(machine_info_get LOCATION)
 
-  machine_id=$(tr -d '[:space:]' < /etc/machine-id 2>/dev/null)
+  machine_id=$(cat /etc/machine-id 2>/dev/null | tr -d '[:space:]')
   [ -z "$machine_id" ] && machine_id="n/a"
 
-  # ✅ FIXED BOOT ID (your requested version)
-  boot_id=$(tr -d '\n' < /proc/sys/kernel/random/boot_id 2>/dev/null)
+  boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '[:space:]')
   [ -z "$boot_id" ] && boot_id="n/a"
 
-  vendor=$(dmi sys_vendor)
-  model=$(dmi product_name)
-  fw_ver=$(dmi bios_version)
-  fw_date=$(dmi bios_date)
+  virtualization=$(detect_virtualization)
+
+  os_name=$(get_os_release PRETTY_NAME)
+  [ -z "$os_name" ] && os_name=$(get_os_release NAME)
+  [ -z "$os_name" ] && os_name="Unknown OS"
+  os_cpe=$(get_os_release CPE_NAME)
 
   kernel=$(uname -r)
   arch=$(uname -m)
 
-  os=$(os_pretty)
-  cpe=$(os_cpe)
+  hw_vendor=$(dmi_read sys_vendor)
+  hw_model=$(dmi_read product_name)
+  fw_version=$(dmi_read bios_version)
+  fw_date=$(dmi_read bios_date)
 
-  printf "   Static hostname: %s\n" "$static"
-  [ "$transient" != "$static" ] && printf "Transient hostname: %s\n" "$transient"
-  printf "         Icon name: %s\n" "$icon"
+  printf "   Static hostname: %s\n" "$static_hostname"
+  [ "$transient_hostname" != "$static_hostname" ] && \
+    printf "Transient hostname: %s\n" "$transient_hostname"
+  [ -n "$pretty_hostname" ] && \
+    printf "   Pretty hostname: %s\n" "$pretty_hostname"
+  printf "         Icon name: %s\n" "$icon_name"
   printf "           Chassis: %s\n" "$chassis"
+  [ -n "$deployment" ] && \
+    printf "        Deployment: %s\n" "$deployment"
+  [ -n "$location" ] && \
+    printf "          Location: %s\n" "$location"
   printf "        Machine ID: %s\n" "$machine_id"
   printf "           Boot ID: %s\n" "$boot_id"
-
-  printf "  Operating System: %s\n" "$os"
-  [ -n "$cpe" ] && printf "            CPE OS: %s\n" "$cpe"
-
-  printf "   Hardware Vendor: %s\n" "$vendor"
-  printf "    Hardware Model: %s\n" "$model"
-  printf "  Firmware Version: %s\n" "$fw_ver"
-  printf "     Firmware Date: %s\n" "$fw_date"
-
+  [ "$virtualization" != "none" ] && \
+    printf "    Virtualization: %s\n" "$virtualization"
+  printf "  Operating System: %s\n" "$os_name"
+  [ -n "$os_cpe" ] && \
+    printf "            CPE OS: %s\n" "$os_cpe"
+  [ -n "$hw_vendor" ] && \
+    printf "   Hardware Vendor: %s\n" "$hw_vendor"
+  [ -n "$hw_model" ] && \
+    printf "    Hardware Model: %s\n" "$hw_model"
+  [ -n "$fw_version" ] && \
+    printf "  Firmware Version: %s\n" "$fw_version"
+  [ -n "$fw_date" ] && \
+    printf "     Firmware Date: %s\n" "$fw_date"
   printf "            Kernel: Linux %s\n" "$kernel"
   printf "      Architecture: %s\n" "$arch"
 }
 
 # ---------------------------------------------------------------------------
-# hostname validation
-# ---------------------------------------------------------------------------
-
-valid_hostname() {
-  echo "$1" | grep -Eq '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$'
-}
-
-# ---------------------------------------------------------------------------
-# set hostname
+# set-hostname [--static|--transient|--pretty] NAME
 # ---------------------------------------------------------------------------
 
 cmd_set_hostname() {
   require_root
 
-  name="$1"
-  [ -z "$name" ] && die "missing hostname"
+  local mode
+  local name
+  mode="all"
+  name=""
 
-  valid_hostname "$name" || die "invalid hostname '$name'"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --static)    mode="static"    ;;
+      --transient) mode="transient" ;;
+      --pretty)    mode="pretty"    ;;
+      -*)          die "unknown option '$1'" ;;
+      *)           name="$1" ;;
+    esac
+    shift
+  done
 
-  dbus_call SetStaticHostname "$name" || echo "$name" > "$HOSTNAME_FILE"
-  hostname "$name" 2>/dev/null
+  [ -z "$name" ] && die "no hostname given"
 
-  echo "Hostname set to '$name'"
+  if [ "$mode" != "pretty" ]; then
+    echo "$name" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$' \
+      || die "invalid hostname '$name'"
+  fi
+
+  case "$mode" in
+    static)
+      echo "$name" > "$HOSTNAME_FILE" || die "cannot write $HOSTNAME_FILE"
+      ;;
+    transient)
+      hostname "$name" || die "cannot set transient hostname"
+      ;;
+    pretty)
+      machine_info_set "PRETTY_HOSTNAME" "$name"
+      ;;
+    all)
+      echo "$name" > "$HOSTNAME_FILE" || die "cannot write $HOSTNAME_FILE"
+      hostname "$name" || die "cannot set transient hostname"
+      # Update pretty hostname to the short name (strip domain)
+      local short
+      short=$(echo "$name" | cut -d. -f1)
+      machine_info_set "PRETTY_HOSTNAME" "$short"
+      ;;
+  esac
+
+  echo "Hostname set to '$name'."
+}
+
+# ---------------------------------------------------------------------------
+# set-icon-name NAME
+# ---------------------------------------------------------------------------
+
+cmd_set_icon_name() {
+  require_root
+  [ -z "${1:-}" ] && die "no icon name given"
+  machine_info_set "ICON_NAME" "$1"
+  echo "Icon name set to '$1'."
+}
+
+# ---------------------------------------------------------------------------
+# set-chassis TYPE
+# ---------------------------------------------------------------------------
+
+cmd_set_chassis() {
+  require_root
+  [ -z "${1:-}" ] && die "no chassis type given"
+
+  local valid=0
+  for c in "${VALID_CHASSIS[@]}"; do
+    [ "$c" = "$1" ] && valid=1 && break
+  done
+  [ $valid -eq 0 ] && die "invalid chassis '$1'. Valid: ${VALID_CHASSIS[*]}"
+
+  machine_info_set "CHASSIS" "$1"
+  echo "Chassis set to '$1'."
+}
+
+# ---------------------------------------------------------------------------
+# set-deployment ENV
+# ---------------------------------------------------------------------------
+
+cmd_set_deployment() {
+  require_root
+  [ -z "${1:-}" ] && die "no deployment environment given"
+  machine_info_set "DEPLOYMENT" "$1"
+  echo "Deployment set to '$1'."
+}
+
+# ---------------------------------------------------------------------------
+# set-location LOCATION
+# ---------------------------------------------------------------------------
+
+cmd_set_location() {
+  require_root
+  [ -z "${1:-}" ] && die "no location given"
+  machine_info_set "LOCATION" "$1"
+  echo "Location set to '$1'."
+}
+
+# ---------------------------------------------------------------------------
+# usage
+# ---------------------------------------------------------------------------
+
+usage() {
+  cat <<EOF
+Usage: hostnamectl [OPTIONS] COMMAND
+
+Commands:
+  status                                   Show current hostname and system info
+  set-hostname [--static|--transient|--pretty] NAME
+                                           Set system hostname
+                                           (default: sets both static and transient)
+  set-icon-name NAME                       Set icon name
+  set-chassis TYPE                         Set chassis type
+                                           (${VALID_CHASSIS[*]})
+  set-deployment ENV                       Set deployment environment
+  set-location LOCATION                    Set location string
+
+Options:
+  -h, --help                               Show this help
+
+Note: Changes are written directly to /etc/HOSTNAME and /etc/machine-info.
+      hostnamed picks them up via inotify and updates D-Bus properties
+      automatically.
+EOF
 }
 
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
-case "${1:-status}" in
-  status) cmd_status ;;
-  set-hostname) shift; cmd_set_hostname "$@" ;;
-  *) die "unknown command" ;;
+COMMAND="${1:-status}"
+shift 2>/dev/null || true
+
+# Bootstrap /etc/machine-info on first run
+if [ ! -f "$MACHINE_INFO_FILE" ] && [ "$EUID" -eq 0 ]; then
+  init_machine_info
+fi
+
+case "$COMMAND" in
+  status)          cmd_status         "$@" ;;
+  set-hostname)    cmd_set_hostname   "$@" ;;
+  set-icon-name)   cmd_set_icon_name  "$@" ;;
+  set-chassis)     cmd_set_chassis    "$@" ;;
+  set-deployment)  cmd_set_deployment "$@" ;;
+  set-location)    cmd_set_location   "$@" ;;
+  -h|--help|help)  usage ;;
+  *) die "unknown command '$COMMAND'. Try --help." ;;
 esac
