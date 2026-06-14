@@ -1,15 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# data/meson.build
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ─── Resolve install directories ──────────────────────────────────────────────
-#
-# Each directory can be overridden via -D<option>=... at configure time.
-# If left empty we query dbus-1 / polkit pkg-config and fall back to sensible
-# defaults.  There is no systemd dependency – the daemon is activated purely
-# by dbus-daemon via the .service file.
-
-# --- D-Bus system service directory ------------------------------------------
 _dbus_srv_opt = get_option('dbus_system_service_dir')
 if _dbus_srv_opt != ''
   dbus_service_dir = _dbus_srv_opt
@@ -25,7 +13,6 @@ else
   endif
 endif
 
-# --- D-Bus system policy directory -------------------------------------------
 dbus_conf_dir_opt = get_option('dbus_system_conf_dir')
 
 if dbus_conf_dir_opt != ''
@@ -34,7 +21,6 @@ else
   dbus_conf_dir = join_paths(prefix, datadir, 'dbus-1', 'system.d')
 endif
 
-# --- polkit policy directory -------------------------------------------------
 _polkit_opt = get_option('polkit_policy_dir')
 if _polkit_opt != ''
   polkit_policy_dir = _polkit_opt
@@ -49,12 +35,6 @@ else
   endif
 endif
 
-# ─── D-Bus service file ───────────────────────────────────────────────────────
-#
-# Tells dbus-daemon how to launch hostnamed on demand (D-Bus activation).
-# The daemon runs as root; dbus-daemon spawns it when the first client calls
-# a method on org.freedesktop.hostname1.
-
 dbus_service_conf = configuration_data()
 dbus_service_conf.set('SBINDIR', join_paths(prefix, get_option('libexecdir')))
 
@@ -66,17 +46,10 @@ configure_file(
   install_dir   : dbus_service_dir,
 )
 
-# ─── D-Bus system policy (bus security) ──────────────────────────────────────
-#
-# Grants ownership of the well-known name to root and allows any user to send
-# method calls.  The Set* methods are further gated by polkit inside the daemon.
-
 install_data(
   'org.freedesktop.hostname1.conf',
   install_dir : dbus_conf_dir,
 )
-
-# ─── polkit policy ────────────────────────────────────────────────────────────
 
 if polkit_found
   install_data(
@@ -85,25 +58,21 @@ if polkit_found
   )
 endif
 
-# ─── Polkit rules (group override) ──────────────────────────────────────────
-
 rules_conf = configuration_data()
 rules_conf.set('PRIVILEGED_GROUP', get_option('privileged-group'))
 
 rules_file = configure_file(
-  input : 'org.freedesktop.hostname1.rules.in',
-  output : 'org.freedesktop.hostname1.rules',
-  configuration : rules_conf
+  input         : 'org.freedesktop.hostname1.rules.in',
+  output        : 'org.freedesktop.hostname1.rules',
+  configuration : rules_conf,
 )
 
 polkit_rules_dir = join_paths(prefix, datadir, 'polkit-1', 'rules.d')
 
 install_data(
   rules_file,
-  install_dir : polkit_rules_dir
+  install_dir : polkit_rules_dir,
 )
-
-# ─── Summary ──────────────────────────────────────────────────────────────────
 
 summary({
   'D-Bus service dir' : dbus_service_dir,
