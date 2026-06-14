@@ -1,9 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# meson_options.txt – hostnamed build options
-# ─────────────────────────────────────────────────────────────────────────────
-
-# polkit is required in production but can be disabled for unit-test builds
-# where there is no system bus.
 option(
   'polkit',
   type        : 'feature',
@@ -11,8 +5,6 @@ option(
   description : 'Use polkit for authorising Set* D-Bus method calls',
 )
 
-# D-Bus system service files (.service) install location.  Defaults to the
-# standard path; override if your distro puts them elsewhere.
 option(
   'dbus_system_service_dir',
   type        : 'string',
@@ -21,7 +13,6 @@ option(
               + '(default: <datadir>/dbus-1/system-services)',
 )
 
-# D-Bus system policy (bus configuration) files.
 option(
   'dbus_system_conf_dir',
   type        : 'string',
@@ -30,7 +21,6 @@ option(
               + '(default: <sysconfdir>/dbus-1/system.d)',
 )
 
-# polkit policy files.
 option(
   'polkit_policy_dir',
   type        : 'string',
@@ -39,9 +29,6 @@ option(
               + '(default: <datadir>/polkit-1/actions)',
 )
 
-# Path to the hostname configuration file.  The freedesktop/systemd convention
-# is /etc/hostname; Slackware uses /etc/HOSTNAME.  Stored in config.h as
-# HOSTNAME_FILE and used everywhere the daemon reads or writes the hostname.
 option(
   'HOSTNAME',
   type        : 'string',
@@ -51,7 +38,7 @@ option(
 
 option(
   'privileged-group',
-  type : 'string',
-  value : 'wheel',
-  description : 'Group allowed to change hostname without authentication'
+  type        : 'string',
+  value       : 'wheel',
+  description : 'Group allowed to change hostname without authentication',
 )
