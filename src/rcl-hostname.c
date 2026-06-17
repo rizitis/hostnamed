@@ -648,15 +648,42 @@ check_polkit( GDBusMethodInvocation *invocation,
   if( local_error )
   {
     g_propagate_error( error, local_error );
-  }
-  else
-  {
-    authorised = polkit_authorization_result_get_is_authorized( result );
-    if( !authorised )
-      g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
-                   "Not authorised to perform action '%s'", action_id );
+    goto out;
   }
 
+  if( polkit_authorization_result_get_is_authorized( result ) )
+  {
+    /* Already authorized (e.g. auth_admin_keep cache hit). */
+    authorised = TRUE;
+  }
+  else if( interactive &&
+           polkit_authorization_result_get_is_challenge( result ) )
+  {
+    /* The polkit agent in the user session (e.g. polkit-gnome-authentication-
+       agent-1) handles the password dialog asynchronously.  Our sync call
+       returns is_challenge=true before the dialog completes.  Re-check once:
+       if the user authenticated, the result is now cached as auth_admin_keep
+       and the second call returns is_authorized=true immediately. */
+    g_clear_object( &result );
+    result = polkit_authority_check_authorization_sync(
+               authority, subject, action_id, NULL,
+               POLKIT_CHECK_AUTHORIZATION_FLAGS_ALLOW_USER_INTERACTION,
+               NULL, &local_error );
+
+    if( local_error )
+    {
+      g_propagate_error( error, local_error );
+      goto out;
+    }
+
+    authorised = polkit_authorization_result_get_is_authorized( result );
+  }
+
+  if( !authorised )
+    g_set_error( error, G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED,
+                 "Not authorised to perform action '%s'", action_id );
+
+out:
   g_clear_object( &result );
   g_clear_object( &subject );
   g_clear_object( &authority );
