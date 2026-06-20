@@ -151,10 +151,6 @@ void rcl_daemon_sync_dbus_properties ( RclHostnameDaemon *daemon );
   or alternative distro layouts.
  ---------------------------------------------------------------------------*/
 
-#define RCL_HOSTNAME_FILE          "/etc/HOSTNAME"
-#define RCL_MACHINE_INFO_FILE      "/etc/machine-info"
-#define RCL_OS_RELEASE_FILE        "/etc/os-release"
-
 /* DMI sysfs paths (Linux-specific) */
 #define RCL_DMI_CHASSIS_TYPE       "/sys/class/dmi/id/chassis_type"
 #define RCL_DMI_CHASSIS_VENDOR     "/sys/class/dmi/id/chassis_vendor"
