@@ -30,10 +30,24 @@ option(
 )
 
 option(
-  'HOSTNAME',
+  'hostname_conf',
   type        : 'string',
   value       : '/etc/HOSTNAME',
   description : 'Path to the hostname config file',
+)
+
+option(
+  'os__conf',
+  type        : 'string',
+  value       : '/etc/os-release',
+  description : 'Path to the os-release file',
+)
+
+option(
+  'machine_conf',
+  type        : 'string',
+  value       : '/etc/machine-info',
+  description : 'Path to the machine-info file',
 )
 
 option(
