@@ -701,6 +701,51 @@ rcl_machine_info_value_is_safe( const gchar *value )
 }
 
 /* --------------------------------------------------------------------------
+   JSON string escaping
+
+   Used by the Describe method.  Not every field that ends up in the JSON
+   blob is sanitised at its source: /etc/os-release fields, DMI strings
+   (HardwareVendor/Model, FirmwareVersion) and the static hostname can all
+   contain double-quotes, backslashes or control characters.  Embedding them
+   raw with %s produces malformed JSON (and is an injection surface for
+   firmware-controlled DMI strings), so every string value is escaped here
+   per RFC 8259.  Returns a newly-allocated string (never NULL).  UTF-8
+   multibyte sequences (bytes >= 0x80) are passed through unchanged, which
+   is valid inside a JSON string.
+   -------------------------------------------------------------------------- */
+static gchar *
+json_escape_string( const gchar *s )
+{
+  GString *out = g_string_new( NULL );
+
+  if( !s )
+    return g_string_free( out, FALSE );
+
+  for( const gchar *p = s; *p; p++ )
+  {
+    guchar c = (guchar) *p;
+    switch( c )
+    {
+      case '"':  g_string_append( out, "\\\"" ); break;
+      case '\\': g_string_append( out, "\\\\" ); break;
+      case '\b': g_string_append( out, "\\b" );  break;
+      case '\f': g_string_append( out, "\\f" );  break;
+      case '\n': g_string_append( out, "\\n" );  break;
+      case '\r': g_string_append( out, "\\r" );  break;
+      case '\t': g_string_append( out, "\\t" );  break;
+      default:
+        if( c < 0x20 )
+          g_string_append_printf( out, "\\u%04x", c );
+        else
+          g_string_append_c( out, (gchar) c );
+        break;
+    }
+  }
+
+  return g_string_free( out, FALSE );
+}
+
+/* --------------------------------------------------------------------------
    Polkit authorisation helper
    -------------------------------------------------------------------------- */
 static gboolean
@@ -1026,51 +1071,46 @@ handle_method_call( GDBusConnection       *connection,
 
   if( g_strcmp0(method_name, "Describe") == 0 )
   {
-    gchar *json = g_strdup_printf(
-      "{"
-      "\"Hostname\":\"%s\","
-      "\"StaticHostname\":\"%s\","
-      "\"PrettyHostname\":\"%s\","
-      "\"DefaultHostname\":\"%s\","
-      "\"HostnameSource\":\"%s\","
-      "\"IconName\":\"%s\","
-      "\"Chassis\":\"%s\","
-      "\"Deployment\":\"%s\","
-      "\"Location\":\"%s\","
-      "\"KernelName\":\"%s\","
-      "\"KernelRelease\":\"%s\","
-      "\"KernelVersion\":\"%s\","
-      "\"OperatingSystemPrettyName\":\"%s\","
-      "\"OperatingSystemCPEName\":\"%s\","
-      "\"OperatingSystemHomeURL\":\"%s\","
-      "\"HardwareVendor\":\"%s\","
-      "\"HardwareModel\":\"%s\","
-      "\"FirmwareVersion\":\"%s\","
-      "\"FirmwareDate\":%" G_GUINT64_FORMAT
-      "}",
-      priv->hostname         ? priv->hostname         : "",
-      priv->static_hostname  ? priv->static_hostname  : "",
-      priv->pretty_hostname  ? priv->pretty_hostname  : "",
-      priv->default_hostname ? priv->default_hostname : "",
-      priv->hostname_source  ? priv->hostname_source  : "",
-      priv->icon_name        ? priv->icon_name        : "",
-      priv->chassis          ? priv->chassis          : "",
-      priv->deployment       ? priv->deployment       : "",
-      priv->location         ? priv->location         : "",
-      priv->kernel_name      ? priv->kernel_name      : "",
-      priv->kernel_release   ? priv->kernel_release   : "",
-      priv->kernel_version   ? priv->kernel_version   : "",
-      priv->os_pretty_name   ? priv->os_pretty_name   : "",
-      priv->os_cpe_name      ? priv->os_cpe_name      : "",
-      priv->os_home_url      ? priv->os_home_url      : "",
-      priv->hw_vendor        ? priv->hw_vendor        : "",
-      priv->hw_model         ? priv->hw_model         : "",
-      priv->firmware_version ? priv->firmware_version : "",
-      priv->firmware_date_usec );
+    GString *js = g_string_new( "{" );
+
+    /* Every string value is JSON-escaped: fields sourced from os-release,
+       DMI and the static hostname are not sanitised at their source and may
+       contain quotes/backslashes/control characters. */
+#define ADD_STR( jname, val )                                       \
+    do {                                                            \
+      gchar *_e = json_escape_string( (val) );                     \
+      g_string_append_printf( js, "\"%s\":\"%s\",", (jname), _e );  \
+      g_free( _e );                                                 \
+    } while( 0 )
+
+    ADD_STR( "Hostname",                  priv->hostname );
+    ADD_STR( "StaticHostname",            priv->static_hostname );
+    ADD_STR( "PrettyHostname",            priv->pretty_hostname );
+    ADD_STR( "DefaultHostname",           priv->default_hostname );
+    ADD_STR( "HostnameSource",            priv->hostname_source );
+    ADD_STR( "IconName",                  priv->icon_name );
+    ADD_STR( "Chassis",                   priv->chassis );
+    ADD_STR( "Deployment",                priv->deployment );
+    ADD_STR( "Location",                  priv->location );
+    ADD_STR( "KernelName",                priv->kernel_name );
+    ADD_STR( "KernelRelease",             priv->kernel_release );
+    ADD_STR( "KernelVersion",             priv->kernel_version );
+    ADD_STR( "OperatingSystemPrettyName", priv->os_pretty_name );
+    ADD_STR( "OperatingSystemCPEName",    priv->os_cpe_name );
+    ADD_STR( "OperatingSystemHomeURL",    priv->os_home_url );
+    ADD_STR( "HardwareVendor",            priv->hw_vendor );
+    ADD_STR( "HardwareModel",             priv->hw_model );
+    ADD_STR( "FirmwareVersion",           priv->firmware_version );
+
+#undef ADD_STR
+
+    /* FirmwareDate is numeric (type 't') and closes the object. */
+    g_string_append_printf( js, "\"FirmwareDate\":%" G_GUINT64_FORMAT "}",
+                            priv->firmware_date_usec );
 
     g_dbus_method_invocation_return_value( invocation,
-      g_variant_new("(s)", json) );
-    g_free( json );
+      g_variant_new("(s)", js->str) );
+    g_string_free( js, TRUE );
     return;
   }
 
